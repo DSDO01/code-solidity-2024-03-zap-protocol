@@ -8,3 +8,10 @@
 # Q&A
 
 # Audit scope
+
+
+[zap-launches-contracts @ ea2a054d2fb871cf63a95156a2c3ff0213464281](https://github.com/Lithium-Ventures/zap-launches-contracts/tree/ea2a054d2fb871cf63a95156a2c3ff0213464281)
+- [zap-launches-contracts/contracts/Admin.sol](zap-launches-contracts/contracts/Admin.sol)
+- [zap-launches-contracts/contracts/interfaces/ITokenSale.sol](zap-launches-contracts/contracts/interfaces/ITokenSale.sol)
+
+
