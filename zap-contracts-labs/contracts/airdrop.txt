@@ -1,0 +1,257 @@
+const { expect } = require("chai");
+const { ethers } = require("hardhat");
+const { describe } = require("mocha");
+const BN = require("ethers").BigNumber;
+
+describe.only("Tax Deduction",async()=>{
+    beforeEach(async () => {
+
+        [owner] = await ethers.getSigners();
+        accounts = await ethers.getSigners();
+        provider = ethers.provider;
+
+        Admin = await ethers.getContractFactory("Admin");
+        TokenSale = await ethers.getContractFactory("TokenSale");
+
+        EBSC = await ethers.getContractFactory("EBSC");
+
+        Staking = await ethers.getContractFactory("Staking");
+        Oracle = await ethers.getContractFactory("ChainLink");
+        Airdrops = await ethers.getContractFactory("Airdrops");
+        Weth = await ethers.getContractFactory("WETH");
+        Factory = await ethers.getContractFactory("UniswapV2Factory");
+        Router = await ethers.getContractFactory("UniswapV2Router01");
+        getinit = await ethers.getContractFactory("CalHash");
+        Getinit = await getinit.deploy();
+
+        await Getinit.deployed();
+        //console.log("init", await Getinit.getInitHash());
+
+        factory = await Factory.deploy(owner.address);
+        await factory.deployed();
+
+        weth = await Weth.deploy();
+        await weth.deployed();
+        // console.log("Weth address: ", weth.address);
+
+        router = await Router.deploy(factory.address, weth.address);
+        await router.deployed();
+
+        admin = await Admin.deploy();
+        await admin.deployed();
+
+        tokenSaleContract = await TokenSale.deploy();
+        await tokenSaleContract.deployed();
+
+        oracle = await Oracle.deploy();
+        await oracle.deployed();
+
+        ebsc = await EBSC.deploy(router.address);
+        await ebsc.deployed();
+
+        staking = await Staking.deploy();
+        await staking.deployed();
+
+        airdrops = await Airdrops.deploy(staking.address, admin.address, ebsc.address);
+        await airdrops.deployed();
+
+        let EBSC_REQ = [[200000,600000,1000000,2500000,5000000,7000000],[200000,600000,1000000,2500000,5000000,7000000],[200000,600000,1000000,2500000,5000000,7000000],[200000,600000,1000000,2500000,5000000,7000000,30000000]];
+        staking.initialize(ebsc.address,admin.address,router.address,weth.address,EBSC_REQ);
+    });
+
+    describe("AirDrop distribution",async()=>{
+        it.only("Distributes amount",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 9957284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            let [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+
+            await ebsc.connect(owner).transfer(accounts[2].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[2]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[2]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ebsc.connect(owner).transfer(accounts[3].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[3]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[3]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            console.log("check 1-------------------------------");
+            await ethers.provider.send("evm_increaseTime", [10518972]);
+            await ethers.provider.send("evm_mine");
+            await airdrops.distributionBNB();
+
+            await staking.connect(accounts[2]).unstake(BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            console.log("check 2--------------------------------");
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 9957284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+            
+            console.log("check 2.5-----------------------------------");
+            await staking.connect(accounts[3]).unstake(BN.from("30000000").mul(BN.from("10").pow("9")));
+            console.log("check 2.7------------------------------------");
+            await staking.connect(accounts[3]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            console.log("check 3-----------------------------------------");
+            await ethers.provider.send("evm_increaseTime", [10518972]);
+            await ethers.provider.send("evm_mine");
+            await airdrops.distributionBNB();
+
+            console.log("check 4");
+            await airdrops.connect(accounts[3]).claimBNB();
+            await airdrops.connect(accounts[2]).claimBNB();
+
+            console.log("check 5");
+            let bal1 = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            let bal2 = (Number(await ethers.provider.getBalance(accounts[3].address)));
+
+            expect(bal2).to.be.greaterThan(bal1);
+
+        });
+        it("Distributes amount proportionaly(1)",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 99957284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            let [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+
+            await ebsc.connect(owner).transfer(accounts[2].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[2]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[2]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ebsc.connect(owner).transfer(accounts[3].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[3]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[3]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ethers.provider.send("evm_increaseTime", [10518972]);
+            await ethers.provider.send("evm_mine");
+            await airdrops.distributionBNB();
+
+            await airdrops.connect(accounts[2]).claimBNB();
+            await airdrops.connect(accounts[3]).claimBNB();
+
+            let bal1 = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            let bal2 = (Number(await ethers.provider.getBalance(accounts[3].address)));
+            expect(bal2).to.be.greaterThanOrEqual(bal1);
+        });
+        it("Distributes amount proportionaly(2)",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 991657284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            let [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+
+            await ebsc.connect(owner).transfer(accounts[2].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[2]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[2]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ethers.provider.send("evm_increaseTime", [31556926]);
+            await ethers.provider.send("evm_mine");
+            await airdrops.distributionBNB();
+
+            let preBal = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            await airdrops.connect(accounts[2]).claimBNB();
+            let posBal = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            expect (posBal).to.be.greaterThan(preBal);
+        });
+        it("Distributes amount proportionaly(3)",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 991657284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            let [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+
+            await ebsc.connect(owner).transfer(accounts[2].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[2]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[2]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ebsc.connect(owner).transfer(accounts[3].address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[3]).approve(staking.address,BN.from("60000000").mul(BN.from("10").pow("9")));
+            await staking.connect(accounts[3]).stake(4,BN.from("30000000").mul(BN.from("10").pow("9")));
+
+            await ethers.provider.send("evm_increaseTime", [31556926]);
+            await ethers.provider.send("evm_mine");
+            await airdrops.distributionBNB();
+
+            const bal1ini = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            const bal2ini = (Number(await ethers.provider.getBalance(accounts[3].address)));
+
+            await airdrops.connect(accounts[2]).claimBNB();
+            await airdrops.connect(accounts[3]).claimBNB();
+            
+            const bal1fin = (Number(await ethers.provider.getBalance(accounts[2].address)));
+            const bal2fin = (Number(await ethers.provider.getBalance(accounts[3].address)));
+
+            let prof1 = await bal1fin - bal1ini;
+            let prof2 = await bal2fin - bal2ini;
+
+            expect(prof1).to.be.within(47000000000000000,48000000000000000);
+            expect(prof2).to.be.within(47000000000000000,48000000000000000);
+        });
+
+    });
+    describe("Airdrop Collection ",async()=>{
+        it("Requires a minimum 5% Lp => bnb deposit at level 1",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 991657284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            const [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await expect(staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb).sub("1")})).to.be.revertedWith("invalid BNB Value");
+        });
+        it("It deposits amount in airdrop contract",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("6000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("100000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 991657284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            const [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            expect (await airdrops.viewBalance()).to.be.eq(0);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+            expect (await airdrops.viewBalance()).to.be.eq(bnb);
+        });
+        it("Reduces depositor's balance ",async()=>{
+            await ebsc.connect(owner).transfer(accounts[1].address,BN.from("1000000").mul(BN.from("10").pow("9")));
+            await admin.setAirdrop(airdrops.address);
+            await ebsc.connect(accounts[1]).approve(staking.address,BN.from("1000000").mul(BN.from("10").pow("9")));
+            await ebsc.connect(accounts[1]).approve(router.address,BN.from("1000000").mul(BN.from("10").pow("9")));
+            await router.connect(accounts[1]).addLiquidityETH(ebsc.address,BN.from("10000").mul(BN.from("10").pow("9")),1,1, 
+            owner.address, 991657284960, { value: BN.from("1").mul(BN.from("10").pow("18"))});
+            const [,bnb] = await router. getAmountsOut(BN.from("10000").mul(BN.from("10").pow("9")),[ebsc.address,weth.address]);
+            await staking.connect(accounts[1]).stake(1,BN.from("200000").mul(BN.from("10").pow("9")) , {value :BN.from(bnb)});
+            expect (await ebsc.balanceOf(accounts[1].address)).to.be.eq(BN.from("790001679003367"));
+            //Reflections affecting the round up value
+        });
+    describe("AirDrop Functions",async()=>{
+        it("Only staking can call",async()=>{
+            await expect (airdrops.connect(accounts[1]).setTotalBNB(5000)).to.be.revertedWith("Only staking contract");
+            await expect (airdrops.connect(accounts[1]).setShareForBNBReward(accounts[1].address)).to.be.revertedWith("Only staking contract");
+            await expect (airdrops.connect(accounts[1]).userPendingBNB(accounts[1].address,5000)).to.be.revertedWith("Only staking contract");
+        });
+    });
+    });
+    
+    });
+
+
+
+
+
+
+    
