@@ -3,7 +3,7 @@ config:
   framework_version: "^2.8.0" 
 
 environment:
-  PRIVATE_KEY: 0x1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p7q8r9s0t1u2v3w4x5y6z7a8b9c0d1e2f # Fake private key to make the build pass
+  PRIVATE_KEY: 0x000000000000000000000000000000000000000000000000000000000000dead # Fake private key to make the build pass
 
 tasks:
   install-dependencies:
